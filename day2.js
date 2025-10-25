@@ -63,8 +63,30 @@ const cheerioLoader = new CheerioWebBaseLoader(
 
 const docs = await cheerioLoader.load();
 
+
+
+
 console.assert(docs.length === 1);
 console.log(`Total characters: ${docs[0].pageContent.length}`);
+
+
+import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
+
+const splitter = new RecursiveCharacterTextSplitter({
+  chunkSize: 1000,
+  chunkOverlap: 200,
+});
+const allSplits = await splitter.splitDocuments(docs);
+console.log(`Split blog post into ${allSplits.length} sub-documents.`);
+
+
+await vectorStore.addDocuments(allSplits);
+
+
+console.log("Added documents to the vector store.");
+
+
+
 
 
 
