@@ -9,19 +9,24 @@ config();
 
 // import { MongoDBAtlasVectorSearch } from "@langchain/mongodb"
 // import { MongoClient } from "mongodb";
-import ollama from 'ollama'
+import { OllamaEmbeddings } from "@langchain/ollama";
+
+
 
 
 import "cheerio";
 import { CheerioWebBaseLoader } from "@langchain/community/document_loaders/web/cheerio";
+
+
+import { SystemMessage } from "@langchain/core/messages";
 
 const model = new ChatGoogleGenerativeAI({
   model: "gemini-2.5-flash-lite",
   apiKey: process.env.GOOGLE_GENAI_API_KEY,
 });
 
-const embeddings  = ollama.embeddings({ 
-    model: 'all-minilm', 
+const embeddings = new OllamaEmbeddings({
+  model: "all-minilm",
 });
 
 
@@ -80,13 +85,91 @@ const allSplits = await splitter.splitDocuments(docs);
 console.log(`Split blog post into ${allSplits.length} sub-documents.`);
 
 
-await vectorStore.addDocuments(allSplits);
+// await vectorStore.addDocuments(allSplits);
 
 
-console.log("Added documents to the vector store.");
-
-
-
+// console.log("Added documents to the vector store.");
 
 
 
+
+
+
+import * as z from "zod";
+import { tool } from "@langchain/core/tools";
+
+const retrieveSchema = z.object({ query: z.string() });
+
+const retrieve = tool(
+  async ({ query }) => {
+    console.log("retrieve tool called");
+    const retrievedDocs = await vectorStore.similaritySearch(query, 2);
+    const serialized = retrievedDocs
+      .map(
+        (doc) => `Source: ${doc.metadata.source}\nContent: ${doc.pageContent}`
+      )
+      .join("\n");
+    return [serialized, retrievedDocs];
+  },
+  {
+    name: "retrieve", 
+    description: "Retrieve information related to a query.",
+    schema: retrieveSchema,
+    responseFormat: "content_and_artifact",
+  }
+);
+
+
+
+
+
+
+// import { createAgent } from "langchain";
+
+// const tools = [retrieve];
+// const systemPrompt = new SystemMessage(
+//     "You have access to a tool that retrieves context from a blog post. " +
+//     "Use the tool to help answer user queries."
+// )
+
+// const agent = createAgent({ model: "openai:gpt-5", tools, systemPrompt });
+
+
+console.log("Agent created");
+
+
+
+import { createAgent } from "langchain";
+
+const tools = [retrieve];
+
+const agent = createAgent({
+  model,
+  tools,
+  messages: [
+    {
+      role: "system",
+      content:
+        "You have access to a tool that retrieves context from a blog post. Use the tool to help answer user queries.",
+    },
+  ],
+});
+
+console.log("Agent created");
+
+let inputMessage = `What is the standard method for Task Decomposition?
+Once you get the answer, look up common extensions of that method.`;
+
+let agentInputs = { messages: [{ role: "user", content: inputMessage }] };
+console.log("streaming started");
+
+const stream = await agent.stream(agentInputs, {
+  streamMode: "values",
+  recursionLimit: 10,
+});
+
+for await (const step of stream) {
+  const lastMessage = step.messages[step.messages.length - 1];
+  console.log(`[${lastMessage.role}]: ${lastMessage.content}`);
+  console.log("-----\n");
+}
